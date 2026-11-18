@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Fire &amp; Ice Dance</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden;overscroll-behavior:none;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+#wrap{position:fixed;inset:0;box-sizing:border-box;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="320" height="180"></canvas></div>
+<script>
+const cv = document.getElementById('c'), cx = cv.getContext('2d');
+let W = 320, H = 180, OY = 0;
+const TAU = Math.PI * 2, W_PERF = .05, W_GOOD = .1, W_OK = .17, GR = 'CBAS', SC = 24, ROW = 14, NL = 31, ENDLESS = 30;
+const IGN = ['Shift', 'Control', 'Alt', 'Meta', 'Tab', 'CapsLock'];
+const P = { k: '#000000', nb: '#1d2b53', pu: '#7e2553', gr: '#5f574f', lg: '#c2c3c7', wh: '#fff1e8', rd: '#ff004d', og: '#ffa300', yw: '#ffec27', gn: '#00e436', bl: '#29adff', ind: '#83769c', pk: '#ff77a8' };
+const GC = { S: P.yw, A: P.gn, B: P.lg, C: P.gr };
+const F = {' ':'000000000000000','A':'010101111101101','B':'110101110101110','C':'011100100100011','D':'110101101101110','E':'111100110100111','F':'111100110100100','G':'011100101101011','H':'101101111101101','I':'111010010010111','J':'001001001101010','K':'101101110101101','L':'100100100100111','M':'101111111101101','N':'110101101101101','O':'010101101101010','P':'110101110100100','Q':'010101101111011','R':'110101110101101','S':'011100010001110','T':'111010010010010','U':'101101101101111','V':'101101101101010','W':'101101111111101','X':'101101010101101','Y':'101101010010010','Z':'111001010100111','0':'111101101101111','1':'010110010010111','2':'110001010100111','3':'110001010001110','4':'101101111001001','5':'111100110001110','6':'011100110101010','7':'111001010010010','8':'010101010101010','9':'010101011001110','!':'010010010000010','.':'000000000000010','-':'000000111000000','+':'000010111010000',':':'000010000010000','/':'001001010100100','?':'110001010000010','%':'101001010100101','>':'100010001010100'};
+const HEART = ['01010', '11111', '11111', '01110', '00100'];
+const BASE = [
+  { name: 'WARM UP', bpm: 100, taps: 64, diff: 1, seed: 7, prog: 0, tr: 0, mel: [69, 72, 76, 74, 72, 69, 67, 69] },
+  { name: 'EMBER WALTZ', bpm: 120, taps: 80, diff: 2, seed: 21, prog: 1, tr: 0, mel: [62, 65, 69, 72, 69, 65, 62, 60] },
+  { name: 'FROST TANGO', bpm: 138, taps: 96, diff: 3, seed: 42, prog: 2, tr: 0, mel: [64, 67, 71, 72, 71, 67, 66, 64] }
+];
+const NAMES = ['WARM UP', 'EMBER WALTZ', 'FROST TANGO', 'SALT WIND', 'RED DUNES', 'GLASS SEA', 'COLD SPARK', 'NIGHT BELL', 'LOW FLAME', 'IRON MOTH', 'HALF MOON', 'DRIFTWOOD', 'EMBER RUN', 'SNOW DRUM', 'ASH TOWER', 'SALT CAVE', 'VOLT DUSK', 'PINE FIRE', 'DEEP HUM', 'STAR LIFT', 'CINDER GO', 'GLACIER ROAD', 'OBSIDIAN', 'WHITE HEAT', 'LAST EMBER', 'THIN ICE', 'MAGMA SONG', 'PALE SHORE', 'KILN SKY', 'FINAL DANCE', 'ENDLESS BLAZE'];
+const PHRASES = [[1, [0, 0, 0, 0]], [1, [2, 0, 2, 0]], [1, [1, 1, 0, -1, -1, 0]], [2, [4, -4, 4, -4]], [2, [6, 0, 0, -6]], [2, [0, 3, 0, -3]], [3, [8, 0, -8, 0]], [3, [2, 2, 2, 2, 2, 2]], [3, [5, 5, 0, -5, -5, 0]], [4, [7, -7, 7, -7]], [4, [9, 0, -9, 0]], [4, [3, 3, -3, -3, 6, -6]]];
+const PROGS = [[45, 41, 48, 43], [50, 46, 41, 48], [52, 48, 50, 47]];
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+function rng(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function motif(r, sc) {
+  const out = []; let d = 2;
+  for (let k = 0; k < 8; k++) {
+    const n = sc.length, o = Math.floor(d / n), q = ((d % n) + n) % n;
+    out.push(62 + sc[q] + 12 * o);
+    d = Math.max(-2, Math.min(7, d + Math.floor(r() * 5) - 2));
+  }
+  return out;
+}
+function cfg(i) {
+  if (i < 3) return BASE[i];
+  if (i === ENDLESS) return { name: NAMES[i], endless: true, prog: 0, tr: 0, mel: [69, 72, 76, 79, 76, 72, 69, 67] };
+  const sc = i % 2 ? [0, 2, 3, 5, 7, 8, 10] : [0, 3, 5, 7, 10];
+  return { name: NAMES[i], bpm: Math.round(104 + (i - 3) * 2.6), taps: Math.min(120, 80 + (i - 3) * 2), diff: i < 12 ? 3 : 4, seed: 100 + i * 17, prog: i % 3, tr: [0, 2, -2, 5, -5, 3, -3][i % 7], mel: motif(rng(7000 + i * 13), sc) };
+}
+const LV = Array.from({ length: NL }, (_, i) => cfg(i));
+const STARS = Array.from({ length: 50 }, () => [Math.random(), Math.random(), Math.random() * 6]);
+let G = null, state = 'menu', ac = null, master = null, noise = null, endG = 0, last = performance.now(), CAL = 0, REC = {}, PV = {}, items = [], sel = 0, tp = 0, hits = [], RES = null, cd = 0, DR = null;
+const gpPrev = [];
+try { CAL = (+localStorage.getItem('fi2-cal') || 0) / 1000; REC = JSON.parse(localStorage.getItem('fi2-rec') || '{}'); } catch (e) {}
+if (!REC.v) { if (REC[3]) { REC[ENDLESS] = REC[3]; delete REC[3]; } REC.v = 1; }
+
+function calMs() { return Math.round(CAL * 1000); }
+function saveCal() { try { localStorage.setItem('fi2-cal', String(calMs())); } catch (e) {} }
+function saveRec(i, s, g, win) {
+  const r = REC[i] || { s: 0, g: 'C', w: false }, fresh = s > r.s;
+  if (fresh) r.s = s;
+  if (GR.indexOf(g) > GR.indexOf(r.g)) r.g = g;
+  r.w = r.w || win; REC[i] = r;
+  try { localStorage.setItem('fi2-rec', JSON.stringify(REC)); } catch (e) {}
+  return fresh;
+}
+function unlocked(i) { return i === 0 || !!(REC[i - 1] && REC[i - 1].w); }
+
+function px(x, y, c) { cx.fillStyle = c; cx.fillRect(x, y, 1, 1); }
+function box(x, y, w, h, c) { cx.fillStyle = c; cx.fillRect(x, y, w, h); }
+function tx(s, x, y, c, k = 1, al = 'l', sh = null) {
+  s = String(s).toUpperCase();
+  const w = s.length * 4 * k - k;
+  x = Math.round(al === 'c' ? x - w / 2 : al === 'r' ? x - w : x);
+  y = Math.round(y);
+  for (let pass = sh ? 0 : 1; pass < 2; pass++) {
+    cx.fillStyle = pass ? c : sh;
+    const o = pass ? 0 : k;
+    for (let n = 0; n < s.length; n++) {
+      const g = F[s[n]] || F[' '];
+      for (let i = 0; i < 15; i++) if (g[i] === '1') cx.fillRect(x + n * 4 * k + (i % 3) * k + o, y + Math.floor(i / 3) * k + o, k, k);
+    }
+  }
+}
+function spr(rows, x, y, c) { rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === '1') px(x + i, y + j, c); }); }
+function dim() { box(0, 0, W, H, 'rgba(0,0,0,.5)'); }
+
+function ensureAudio() {
+  if (!ac) {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    master = ac.createGain(); master.gain.value = .32; master.connect(ac.destination);
+    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (ac.state === 'suspended') ac.resume();
+}
+function tone(f, t, d, type, v, slide) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + d);
+  g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+  o.connect(g).connect(master); o.start(t); o.stop(t + d + .03);
+}
+function hit(t, d, v, type, f) {
+  const s = ac.createBufferSource(), flt = ac.createBiquadFilter(), g = ac.createGain();
+  s.buffer = noise; flt.type = type; flt.frequency.value = f;
+  g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+  s.connect(flt).connect(g).connect(master); s.start(t, Math.random() * .5); s.stop(t + d + .02);
+}
+function scheduleTap(j) {
+  const T = G.m, t = G.gs + G.T[j], p = j ? G.T[j - 1] : 0, beat = 60 / G.B[j];
+  const root = PROGS[T.prog][Math.floor(j / 4) % 4] + T.tr;
+  const sh = T.endless ? ((j >> 3) * 5 % 7) - 3 : 0;
+  const note = T.mel[j % 8] + sh + (Math.floor(j / 16) % 4 === 3 ? 12 : 0);
+  tone(150, t, .12, 'triangle', .6, 45);
+  if (j % 2) hit(t, .1, .22, 'bandpass', 1800);
+  hit(G.gs + (p + G.T[j]) / 2, .03, .08, 'highpass', 6000);
+  tone(mtof(j % 4 === 2 ? root - 5 : root - 12), t, beat * .9, 'triangle', .22);
+  tone(mtof(note), t, beat * .85, 'square', .08);
+  if (j % 4 === 0) { tone(mtof(root + 12), t, beat * 3.5, 'square', .03); tone(mtof(root + 19), t, beat * 3.5, 'square', .03); }
+}
+function sfx(k) {
+  const t = ac.currentTime;
+  if (k === 0) { tone(1046, t, .08, 'square', .09); tone(1568, t + .06, .12, 'square', .08); }
+  else if (k === 1) tone(880, t, .07, 'square', .08);
+  else if (k === 2) tone(660, t, .07, 'triangle', .1);
+  else if (k === 3) tone(140, t, .14, 'square', .08, 90);
+  else { tone(300, t, .3, 'square', .07, 110); hit(t, .25, .16, 'lowpass', 900); }
+}
+function pump() {
+  if (state !== 'play' || !G) return;
+  if (G.m.endless && G.T.length - G.sj < 40) gen(G, 40);
+  const lim = G.m.endless ? G.T.length : G.m.taps;
+  while (G.sj < lim && G.gs + G.T[G.sj] < ac.currentTime + .3) scheduleTap(G.sj++);
+}
+
+function bpmAt(m, j) { return m.endless ? Math.min(180, 110 + 2 * Math.floor(j / 8)) : m.bpm; }
+function build(i, n, seed) { const m = LV[i], tr = { m, rand: m.endless ? (seed ? rng(seed) : Math.random) : rng(m.seed), X: [0], Y: [0], H: [], T: [], B: [], q: [] }; gen(tr, n); return tr; }
+function gen(tr, n) {
+  const m = tr.m;
+  for (let i = 0; i < n; i++) {
+    const j = tr.T.length;
+    if (j) {
+      if (!tr.q.length) {
+        const lvl = m.endless ? Math.min(4, 1 + Math.floor(j / 60)) : m.diff, pool = PHRASES.filter(p => p[0] <= lvl);
+        const p = pool[Math.floor(tr.rand() * pool.length)], s = tr.rand() < .5 ? -1 : 1;
+        tr.q.push(...p[1].map(v => v * s));
+      }
+      tr.H.push(tr.H[j - 1] + tr.q.shift() * Math.PI / 12);
+    } else tr.H.push(-Math.PI / 2);
+    const h = tr.H[j], b = bpmAt(m, j);
+    tr.X.push(tr.X[j] + Math.cos(h)); tr.Y.push(tr.Y[j] + Math.sin(h)); tr.B.push(b);
+    tr.T.push((j ? tr.T[j - 1] : 0) + (j ? 60 : 120) / b);
+  }
+}
+function nrm(a) { a %= TAU; return a <= -Math.PI ? a + TAU : a > Math.PI ? a - TAU : a; }
+function orbit(c, f) { const p = c ? G.H[c - 1] : G.H[0]; return p + Math.PI + nrm(G.H[c] - p - Math.PI) * f; }
+function fr(g, c) { const t0 = c ? G.T[c - 1] : 0; return Math.min(1, Math.max(0, (g - t0) / (G.T[c] - t0))); }
+function sc(x, y) { return [Math.round(W / 2 + (x - G.cam.x) * SC), Math.round(H * .55 + (y - G.cam.y) * SC)]; }
+
+function fireCol(dx, dy, R) { const d = Math.hypot(dx, dy) / R; return d < .4 ? P.yw : d < .75 ? P.og : P.rd; }
+function iceCol(dx, dy, R) { return dx > R * .25 ? P.ind : dx < -R * .3 && dy < -R * .2 ? P.wh : P.bl; }
+function orb(kind, x, y, R, t) {
+  const X = Math.round(x), Y = Math.round(y);
+  const inside = (dx, dy, r) => kind ? Math.abs(dy) <= r * .87 && Math.abs(dx) <= r - Math.abs(dy) * .58 : dx * dx + dy * dy <= r * r;
+  for (let dy = -R - 1; dy <= R + 1; dy++) for (let dx = -R - 1; dx <= R + 1; dx++) if (inside(dx, dy, R + 1)) px(X + dx, Y + dy, P.k);
+  for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) if (inside(dx, dy, R)) px(X + dx, Y + dy, kind ? iceCol(dx, dy, R) : fireCol(dx, dy, R));
+  if (kind) { if (Math.sin(t * 9 + X) > .92) px(X + R - 1, Y - R + 1, P.wh); }
+  else for (let i = -1; i <= 1; i++) { const h = 1 + Math.floor((Math.sin(t * 17 + i * 2.1) + 1) * 1.5); box(X + i, Y - R - 1 - h, 1, h, P.og); }
+}
+
+function stamp(s, x, y, c) { G.stamps.push({ s, x, y, t: 0, c }); }
+function burst(x, y, n, cols) {
+  for (let i = 0; i < n; i++) G.parts.push({ x, y, vx: (Math.random() - .5) * 3, vy: (Math.random() - .8) * 3, t: 0, life: .35 + Math.random() * .35, c: cols[i % cols.length] });
+}
+function miss(j) {
+  G.lives--; G.combo = 0; G.cnt[3]++; G.sh = 3; sfx(4);
+  stamp('MISS', G.X[j + 1], G.Y[j + 1], P.rd);
+  burst(G.X[j + 1], G.Y[j + 1], 6, [P.rd, P.gr]);
+}
+function press() {
+  if (state !== 'play') return;
+  const m = G.m, lim = m.endless ? G.T.length : m.taps, j = G.nj, g = ac.currentTime - G.gs - CAL;
+  if (j >= lim || g < G.T[0] - W_OK) return;
+  const d = g - G.T[j], ad = Math.abs(d), x = G.X[j + 1], y = G.Y[j + 1];
+  if (d > W_OK) { miss(j); G.nj++; return; }
+  if (ad > W_OK) { G.combo = 0; G.cnt[3]++; G.lives--; G.sh = 3; sfx(3); stamp('OFF BEAT', G.X[G.cur], G.Y[G.cur], P.pk); return; }
+  const k = ad <= W_PERF ? 0 : ad <= W_GOOD ? 1 : 2;
+  G.nj++; G.combo++; G.best = Math.max(G.best, G.combo);
+  G.score += [100, 50, 20][k] * (1 + Math.min(4, Math.floor(G.combo / 10)));
+  G.cnt[k]++; sfx(k);
+  burst(x, y, k ? 4 : 10, k ? [P.wh, P.lg] : [P.yw, P.og, P.wh]);
+  stamp(['PERFECT', 'GOOD', 'OK'][k], x, y, [P.yw, P.gn, P.lg][k]);
+}
+function update(g, dt) {
+  const m = G.m;
+  if (m.endless && G.T.length - G.cur < 40) gen(G, 40);
+  const lim = m.endless ? G.T.length : m.taps;
+  while (G.cur < G.T.length && g >= G.T[G.cur]) G.cur++;
+  while (G.nj < lim && g > G.T[G.nj] + W_OK) { miss(G.nj); G.nj++; }
+  const c = G.cur, an = orbit(c, fr(g, c)), k = 1 - Math.exp(-dt * 5);
+  G.cam.x += (G.X[c] + (G.X[c + 1] - G.X[c]) * .55 - G.cam.x) * k;
+  G.cam.y += (G.Y[c] + (G.Y[c + 1] - G.Y[c]) * .55 - G.cam.y) * k;
+  G.trail.push([G.X[c] + Math.cos(an), G.Y[c] + Math.sin(an), c % 2 ? P.og : P.bl]);
+  if (G.trail.length > 6) G.trail.shift();
+  for (const p of G.parts) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+  G.parts = G.parts.filter(p => p.t < p.life);
+  for (const s of G.stamps) s.t += dt;
+  G.stamps = G.stamps.filter(s => s.t < .9);
+  G.sh = Math.max(0, G.sh - dt * 14);
+  if (G.lives <= 0) finish(false, g);
+  else if (!m.endless && G.nj >= lim && g > G.T[lim - 1] + .8) finish(true, g);
+}
+function finish(win, g) {
+  state = win ? 'done' : 'fail'; endG = g; clearInterval(G.timer);
+  const n = G.cnt.reduce((a, b) => a + b, 0) || 1, acc = (G.cnt[0] + .6 * G.cnt[1] + .3 * G.cnt[2]) / n;
+  const grade = win && !G.cnt[3] && acc >= .92 ? 'S' : acc >= .8 ? 'A' : acc >= .65 ? 'B' : 'C';
+  const fresh = saveRec(G.idx, G.score, grade, win), nxt = win && G.idx < ENDLESS ? G.idx + 1 : -1;
+  const flav = !win ? 'OUCH' : { S: 'CLEAN RUN', A: 'NICE', B: 'NOT BAD', C: 'YOU MADE IT' }[grade];
+  RES = { win, grade, col: GC[grade], flav, fresh, score: G.score, acc: Math.round(acc * 100), best: G.best, cnt: G.cnt };
+  items = [];
+  if (nxt >= 0 && unlocked(nxt)) items.push({ t: 'NEXT', a: () => startRun(nxt) });
+  items.push({ t: 'RETRY', a: () => startRun(G.idx) }, { t: 'TRACK LIST', a: toMenu });
+  sel = 0;
+}
+function startRun(i) {
+  ensureAudio();
+  if (G) clearInterval(G.timer);
+  const m = LV[i];
+  G = build(i, m.endless ? 80 : m.taps + 2);
+  Object.assign(G, { idx: i, nj: 0, sj: 0, cur: 0, score: 0, combo: 0, best: 0, lives: 3, cnt: [0, 0, 0, 0], parts: [], stamps: [], trail: [], cam: { x: 0, y: 0 }, gs: ac.currentTime + .5, sh: 0, timer: 0 });
+  G.timer = setInterval(pump, 40);
+  tone(880, G.gs, .06, 'square', .08); tone(880, G.gs + 60 / G.B[0], .06, 'square', .08);
+  state = 'play'; items = []; hits = [];
+}
+function pause() {
+  state = 'pause'; ac.suspend();
+  items = [{ t: 'RESUME', a: resume }, { t: 'RESTART', a: () => startRun(G.idx) }, { t: 'TRACK LIST', a: toMenu }];
+  sel = 0;
+}
+function resume() {
+  if (state !== 'pause') return;
+  state = 'count'; items = []; cd = 3;
+  const step = () => { cd--; if (cd > 0) setTimeout(step, 550); else { ac.resume(); state = 'play'; } };
+  setTimeout(step, 550);
+}
+function toMenu() {
+  const li = G ? G.idx : sel;
+  if (G) clearInterval(G.timer);
+  G = null; state = 'menu'; sel = li; buildMain(); follow();
+}
+function buildMain() {
+  items = LV.map((m, i) => ({ a: () => { if (unlocked(i)) startRun(i); } }));
+  items.push({ off: true });
+}
+function act(i) { const it = items[i]; if (it && it.a) it.a(); }
+
+function vis() { return Math.max(1, Math.min(NL, Math.floor((H - 77) / ROW) + 1)); }
+function clampTop(t) { return Math.max(0, Math.min(NL - vis(), t)); }
+function follow() {
+  if (sel < NL) { const v = vis(); if (sel < tp) tp = sel; else if (sel >= tp + v) tp = sel - v + 1; }
+  tp = clampTop(tp);
+}
+function move(d) { const n = items.length; sel = (sel + d + n) % n; follow(); }
+function nudge(d) { if (state === 'menu' && items[sel] && items[sel].off) { CAL = Math.max(-.15, Math.min(.15, CAL + d * .005)); saveCal(); } }
+
+function miniPath(i, x0, y0, w, h) {
+  if (!PV[i]) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const k = c.getContext('2d'), T = build(i, 40, 99), xs = T.X, ys = T.Y;
+    const mnX = Math.min(...xs), mxX = Math.max(...xs), mnY = Math.min(...ys), mxY = Math.max(...ys);
+    const s = Math.min((w - 2) / (mxX - mnX || 1), (h - 2) / (mxY - mnY || 1));
+    const ox = (w - (mxX - mnX) * s) / 2 - mnX * s, oy = (h - (mxY - mnY) * s) / 2 - mnY * s;
+    k.fillStyle = LV[i].endless ? P.og : P.lg;
+    for (let j = 0; j < xs.length - 1; j++) {
+      const ax = ox + xs[j] * s, ay = oy + ys[j] * s, bx = ox + xs[j + 1] * s, by = oy + ys[j + 1] * s;
+      const n = Math.max(1, Math.round(Math.hypot(bx - ax, by - ay)));
+      for (let q = 0; q <= n; q++) k.fillRect(Math.round(ax + (bx - ax) * q / n), Math.round(ay + (by - ay) * q / n), 1, 1);
+    }
+    PV[i] = c;
+  }
+  cx.drawImage(PV[i], x0, y0);
+}
+function drawItems(y0, step) {
+  const x0 = W / 2 - 90;
+  items.forEach((it, i) => {
+    const y = y0 + i * step, on = i === sel;
+    if (on) { box(x0, y - 3, 180, step - 2, P.pu); tx('>', x0 + 4, y, P.yw, 1, 'l', P.k); }
+    tx(it.t, W / 2, y, on ? P.yw : P.wh, 1, 'c', P.k);
+    hits.push({ x: x0, y: y - 3, w: 180, h: step - 2, i });
+  });
+}
+function drawMenu(t) {
+  const a = t * 1.2;
+  orb(0, W * .12 + Math.cos(a) * 9, 14 + Math.sin(a) * 9, 3, t);
+  orb(1, W * .88 - Math.cos(a) * 9, 14 - Math.sin(a) * 9, 3, t);
+  tx('FIRE + ICE', W / 2, 6, P.yw, 3, 'c', P.pu);
+  tx('TAP ON THE BEAT', W / 2, 24, P.lg, 1, 'c', P.k);
+  tp = clampTop(tp);
+  const v = vis();
+  tx(`${tp + 1}-${Math.min(NL, tp + v)} OF ${NL}`, W - 8, 24, P.gr, 1, 'r');
+  for (let k = 0; k < v; k++) {
+    const i = tp + k, y = 36 + k * ROW, m = LV[i], r = REC[i], on = unlocked(i), s = i === sel;
+    if (s) box(12, y - 2, W - 24, 13, P.pu);
+    const lab = `${i + 1} ${m.name}`;
+    tx(lab, 20, y, on ? P.wh : P.gr, 1, 'l', P.k);
+    if (r && on) tx(r.g, 20 + lab.length * 4 + 3, y, GC[r.g], 1, 'l', P.k);
+    if (on) tx(m.endless ? 'RAMPS UP' : `${m.bpm} BPM ${m.taps} BEATS`, 20, y + 6, P.lg);
+    else tx(`CLEAR ${i} FIRST`, 20, y + 6, P.gr);
+    miniPath(i, W - 70, y - 1, 50, 11);
+    hits.push({ x: 12, y: y - 2, w: W - 24, h: 13, i });
+  }
+  const so = sel === NL;
+  if (so) box(12, H - 30, W - 24, 15, P.pu);
+  tx('OFFSET', 20, H - 26, so ? P.yw : P.wh, 1, 'l', P.k);
+  tx(`${calMs()} MS`, 60, H - 26, P.yw, 1, 'l', P.k);
+  tx('LEFT RIGHT ADJUST', 20, H - 19, P.gr);
+  hits.push({ x: 12, y: H - 30, w: W - 24, h: 15, i: NL });
+  tx('ENTER PLAY  P PAUSE  Q QUIT', W / 2, H - 9, P.gr, 1, 'c');
+}
+function drawWorld(g, t) {
+  const c = G.cur, X = G.X, Y = G.Y, tb = 60 / G.B[Math.min(c, G.B.length - 1)];
+  const sx = G.sh ? Math.round((Math.random() * 2 - 1) * G.sh) : 0, sy = G.sh ? Math.round((Math.random() * 2 - 1) * G.sh) : 0;
+  const Q = (x, y) => { const q = sc(x, y); return [q[0] + sx, q[1] + sy]; };
+  const lo = Math.max(0, c - 8), hi = Math.min(X.length - 1, c + 22);
+  for (let j = lo; j < hi; j++) {
+    const a = Q(X[j], Y[j]), b = Q(X[j + 1], Y[j + 1]), n = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1])));
+    for (let s = 0; s <= n; s++) {
+      const x = Math.round(a[0] + (b[0] - a[0]) * s / n), y = Math.round(a[1] + (b[1] - a[1]) * s / n);
+      if (j >= c) px(x, y, P.wh); else if (s % 3 === 0) px(x, y, P.gr);
+    }
+  }
+  for (let j = c + 2; j < hi; j++) { const a = Q(X[j], Y[j]); px(a[0], a[1] - 1, P.lg); px(a[0] - 1, a[1], P.lg); px(a[0], a[1], P.lg); px(a[0] + 1, a[1], P.lg); px(a[0], a[1] + 1, P.lg); }
+  const L = Q(X[c + 1], Y[c + 1]), tl = Math.min(1, Math.max(0, G.T[c] - g) / tb), hw = Math.round(4 + 12 * tl);
+  box(L[0] - hw, L[1] - hw, 2 * hw + 1, 1, P.yw); box(L[0] - hw, L[1] + hw, 2 * hw + 1, 1, P.yw);
+  box(L[0] - hw, L[1] - hw, 1, 2 * hw + 1, P.yw); box(L[0] + hw, L[1] - hw, 1, 2 * hw + 1, P.yw);
+  const an = orbit(c, fr(g, c)), pv = Q(X[c], Y[c]), oq = Q(X[c] + Math.cos(an), Y[c] + Math.sin(an));
+  for (let k = 0; k < 48; k += 2) { const q = Q(X[c] + Math.cos(k / 48 * TAU), Y[c] + Math.sin(k / 48 * TAU)); px(q[0], q[1], P.gr); }
+  G.trail.forEach((p, i) => { const q = Q(p[0], p[1]); px(q[0], q[1], i < G.trail.length - 2 ? P.gr : p[2]); });
+  if (c % 2 === 0) { orb(0, pv[0], pv[1], 5, t); orb(1, oq[0], oq[1], 5, t); }
+  else { orb(1, pv[0], pv[1], 5, t); orb(0, oq[0], oq[1], 5, t); }
+  for (const p of G.parts) { const q = Q(p.x, p.y); if (p.t < p.life * .6) box(q[0], q[1], 2, 2, p.c); else px(q[0], q[1], p.c); }
+  for (const s of G.stamps) { const q = Q(s.x, s.y); tx(s.s, q[0], q[1] - 8 - s.t * 10, s.c, 1, 'c', P.k); }
+}
+function drawHUD(g) {
+  const m = G.m, c = G.cur;
+  tx(`${G.idx + 1} ${m.name}`, 6, 6, P.wh, 1, 'l', P.k);
+  tx(`${G.B[Math.min(c, G.B.length - 1)]} BPM`, 6, 14, P.lg, 1, 'l', P.k);
+  for (let i = 0; i < 3; i++) spr(HEART, 6 + i * 7, 23, i < G.lives ? P.rd : P.gr);
+  tx(G.score, W - 6, 6, P.yw, 1, 'r', P.k);
+  tx(`STREAK ${G.combo} X${1 + Math.min(4, Math.floor(G.combo / 10))}`, W - 6, 14, P.lg, 1, 'r', P.k);
+  if (!m.endless) { box(6, H - 6, W - 12, 2, P.gr); box(6, H - 6, (W - 12) * Math.min(1, G.nj / m.taps), 2, P.og); }
+  if (state === 'play') {
+    box(W - 16, H - 20, 2, 9, P.lg); box(W - 12, H - 20, 2, 9, P.lg);
+    if (g < G.T[0] - .15) tx('READY', W / 2, 40, P.yw, 2, 'c', P.k);
+  }
+}
+function drawPause() {
+  tx('PAUSED', W / 2, OY + 40, P.yw, 2, 'c', P.k);
+  drawItems(OY + 72, 16);
+  tx('ENTER PICK  P RESUME', W / 2, H - 9, P.gr, 1, 'c');
+}
+function drawResult() {
+  const R = RES;
+  tx(R.win ? 'TRACK CLEARED' : 'OUT OF HEARTS', W / 2, OY + 12, P.yw, 2, 'c', P.k);
+  tx(R.grade, W / 2, OY + 30, R.col, 6, 'c', P.k);
+  tx(R.flav, W / 2, OY + 64, P.lg, 1, 'c', P.k);
+  tx(`SCORE ${R.score}`, W / 2, OY + 78, P.wh, 1, 'c', P.k);
+  tx(`ACC ${R.acc}% BEST STREAK ${R.best}`, W / 2, OY + 88, P.lg, 1, 'c');
+  tx(`PERFECT ${R.cnt[0]} GOOD ${R.cnt[1]} OK ${R.cnt[2]} MISS ${R.cnt[3]}`, W / 2, OY + 98, P.gr, 1, 'c');
+  if (R.fresh) tx('NEW BEST!', W / 2, OY + 110, P.gn, 1, 'c', P.k);
+  drawItems(OY + 124, 14);
+  tx('ENTER PICK  Q TRACK LIST', W / 2, H - 9, P.gr, 1, 'c');
+}
+function draw(g, t) {
+  OY = Math.max(0, Math.floor((H - 180) / 2));
+  hits = [];
+  box(0, 0, W, H, P.nb);
+  for (const s of STARS) px(Math.floor(s[0] * W), Math.floor(s[1] * H), Math.sin(t * 2 + s[2]) > .3 ? P.lg : P.gr);
+  if (!G) { drawMenu(t); return; }
+  drawWorld(g, t);
+  drawHUD(g);
+  if (state === 'count') { if (cd > 0) tx(String(cd), W / 2, H / 2 - 15, P.yw, 6, 'c', P.k); }
+  else if (state === 'pause') { dim(); drawPause(); }
+  else if (state === 'done' || state === 'fail') { dim(); drawResult(); }
+}
+
+function pad() {
+  const gl = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for (const x of gl) if (x) { gp = x; break; }
+  if (!gp) return;
+  const pr = gp.buttons.map(b => b.pressed), ed = i => !!pr[i] && !gpPrev[i];
+  if (ed(0)) { if (state === 'play') press(); else if (state !== 'count') act(sel); }
+  if (ed(1) && state !== 'play' && state !== 'count' && state !== 'menu') toMenu();
+  if (ed(9)) { if (state === 'play') pause(); else if (state === 'pause') resume(); }
+  if (state !== 'play' && state !== 'count') { if (ed(12)) move(-1); if (ed(13)) move(1); }
+  if (ed(14)) nudge(-1);
+  if (ed(15)) nudge(1);
+  gpPrev.length = 0; pr.forEach(v => gpPrev.push(v));
+}
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000), t = now / 1000;
+  last = now;
+  pad();
+  let g = 0;
+  if (G) { g = state === 'done' || state === 'fail' ? endG : ac.currentTime - G.gs; if (state === 'play') update(g, dt); }
+  draw(g, t);
+  requestAnimationFrame(frame);
+}
+function fit() {
+  const dw = cv.clientWidth || innerWidth, dh = cv.clientHeight || innerHeight, a = dw / dh;
+  if (a >= 1) { H = 180; W = Math.round(Math.max(200, Math.min(620, 180 * a))); }
+  else { W = 200; H = Math.round(Math.min(560, 200 / a)); }
+  cv.width = W; cv.height = H;
+}
+
+addEventListener('keydown', e => {
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key, K = k.toLowerCase();
+  if (state === 'play') {
+    if (K === 'escape' || K === 'p') pause();
+    else if (K === 'q') toMenu();
+    else if (!IGN.includes(k)) { e.preventDefault(); press(); }
+    return;
+  }
+  if (state === 'count') return;
+  if (K === 'arrowup' || K === 'w') move(-1);
+  else if (K === 'arrowdown' || K === 's') move(1);
+  else if (K === 'pageup') move(-vis());
+  else if (K === 'pagedown') move(vis());
+  else if (K === 'arrowleft' || K === 'a') nudge(-1);
+  else if (K === 'arrowright' || K === 'd') nudge(1);
+  else if (K === 'enter' || K === ' ') { e.preventDefault(); act(sel); }
+  else if (K === 'escape' || K === 'p') { if (state === 'pause') resume(); }
+  else if (K === 'q') { if (state !== 'menu') toMenu(); }
+});
+function ptr(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }; }
+cv.addEventListener('pointerdown', e => {
+  const q = ptr(e);
+  if (state === 'play') {
+    e.preventDefault();
+    if (q.x >= W - 22 && q.y >= H - 26) pause(); else press();
+    return;
+  }
+  DR = { y: q.y, t0: tp, moved: false };
+});
+cv.addEventListener('pointermove', e => {
+  if (!DR) return;
+  const q = ptr(e), dy = q.y - DR.y;
+  if (Math.abs(dy) > 3) DR.moved = true;
+  if (DR.moved && state === 'menu') tp = clampTop(DR.t0 - Math.round(dy / ROW));
+});
+cv.addEventListener('pointerup', e => {
+  if (!DR) return;
+  const d = DR; DR = null;
+  if (d.moved) return;
+  const q = ptr(e);
+  for (const h of hits) {
+    if (q.x >= h.x && q.x < h.x + h.w && q.y >= h.y && q.y < h.y + h.h) {
+      sel = h.i;
+      if (items[h.i] && items[h.i].off) nudge(q.x < W / 2 ? -1 : 1); else act(h.i);
+      break;
+    }
+  }
+});
+cv.addEventListener('pointercancel', () => { DR = null; });
+addEventListener('wheel', e => { if (state === 'menu') tp = clampTop(tp + (e.deltaY > 0 ? 1 : -1)); }, { passive: true });
+addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('resize', fit);
+addEventListener('orientationchange', fit);
+document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') pause(); });
+buildMain(); fit(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>
